@@ -360,6 +360,10 @@ mod tests {
         assert!(!prompt.contains("No extensions are defined"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn project_git_metadata_does_not_reach_system_prompt() {
         let project = tempfile::tempdir().unwrap();

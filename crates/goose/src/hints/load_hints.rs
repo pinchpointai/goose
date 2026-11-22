@@ -71,7 +71,7 @@ impl SubdirectoryHintTracker {
 
     pub fn load_new_hints(&mut self, working_dir: &Path) -> Vec<(String, String)> {
         let pending = std::mem::take(&mut self.pending_dirs);
-        if pending.is_empty() {
+        if pending.is_empty() || crate::tool_gate::HARDENED {
             return Vec::new();
         }
 
@@ -268,7 +268,13 @@ pub fn load_hint_files(
         }
     }
     let git_root = find_git_root(cwd);
-    let local_directories = get_local_directories(git_root, cwd);
+    // Project files are untrusted input (a cloned repo can carry them); Pinch builds don't load
+    // them as instructions.
+    let local_directories = if crate::tool_gate::HARDENED {
+        Vec::new()
+    } else {
+        get_local_directories(git_root, cwd)
+    };
 
     let import_boundary = git_root.unwrap_or(cwd);
 
@@ -323,6 +329,10 @@ mod tests {
         builder.build().expect("failed to build gitignore")
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_goosehints_when_present() {
         let dir = TempDir::new().unwrap();
@@ -436,6 +446,10 @@ mod tests {
         assert!(!hints.contains("Project Hints"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_goosehints_multiple_filenames() {
         let dir = TempDir::new().unwrap();
@@ -462,6 +476,10 @@ mod tests {
         assert!(hints.contains("Custom hints file content from .goosehints"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_goosehints_configurable_filename() {
         let dir = TempDir::new().unwrap();
@@ -474,6 +492,10 @@ mod tests {
         assert!(!hints.contains(".goosehints")); // Make sure it's not loading the default
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_nested_goosehints_with_git_root() {
         let temp_dir = TempDir::new().unwrap();
@@ -509,6 +531,10 @@ mod tests {
         );
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_nested_goosehints_without_git_root() {
         let temp_dir = TempDir::new().unwrap();
@@ -541,6 +567,10 @@ mod tests {
         assert!(!hints.contains("Subdir hints content"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_nested_goosehints_mixed_filenames() {
         let temp_dir = TempDir::new().unwrap();
@@ -571,6 +601,10 @@ mod tests {
         assert!(hints.contains("Subdir .goosehints content"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_hints_with_basic_imports() {
         let temp_dir = TempDir::new().unwrap();
@@ -606,6 +640,10 @@ Additional instructions here."#;
         assert!(hints.contains("--- End of config.md ---"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_hints_with_git_import_boundary() {
         let temp_dir = TempDir::new().unwrap();
@@ -694,6 +732,10 @@ End of nested hints"#;
         assert!(hints.contains("@../../../forbidden.md"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_hints_without_git_import_boundary() {
         let temp_dir = TempDir::new().unwrap();
@@ -725,6 +767,10 @@ End of hints"#;
         assert!(hints.contains("@../parent.md"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_import_boundary_respects_nested_setting() {
         let temp_dir = TempDir::new().unwrap();
@@ -768,6 +814,10 @@ End of hints"#;
         );
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn tracker_records_path_argument() {
         let temp_dir = TempDir::new().unwrap();
@@ -783,6 +833,10 @@ End of hints"#;
         assert!(tracker.loaded_dirs.contains(&src.canonicalize().unwrap()));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn tracker_records_command_argument() {
         let temp_dir = TempDir::new().unwrap();
@@ -800,6 +854,10 @@ End of hints"#;
             .contains(&nested.canonicalize().unwrap()));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn tracker_skips_flags_in_command() {
         let temp_dir = TempDir::new().unwrap();
@@ -815,6 +873,10 @@ End of hints"#;
         assert_eq!(tracker.loaded_dirs.len(), 1);
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn tracker_loads_subdirectory_hints() {
         let temp_dir = TempDir::new().unwrap();
@@ -837,6 +899,10 @@ End of hints"#;
         assert!(hints[0].1.contains("nested subdirectory hints"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn tracker_deduplicates_directories() {
         let temp_dir = TempDir::new().unwrap();
@@ -897,6 +963,10 @@ End of hints"#;
     }
 
     #[cfg(unix)]
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn tracker_preserves_in_boundary_symlinks_and_deduplicates_aliases() {
         use std::os::unix::fs::symlink;
@@ -923,6 +993,10 @@ End of hints"#;
         assert_eq!(tracker.loaded_dirs.len(), 1);
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn tracker_retries_directory_after_parent_is_created() {
         let temp_dir = TempDir::new().unwrap();
@@ -953,6 +1027,10 @@ mod gitignore_tests {
     use std::fs;
     use tempfile::TempDir;
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_hints_with_gitignore_filters_referenced_files() {
         let dir = TempDir::new().unwrap();
@@ -979,6 +1057,10 @@ mod gitignore_tests {
         assert!(hints.contains("@secret.env"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_build_gitignore_loads_from_git_root_in_subdirectory() {
         let dir = TempDir::new().unwrap();
@@ -1006,6 +1088,10 @@ mod gitignore_tests {
         assert!(hints.contains("@../secret.env"));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project instruction files are not loaded"
+    )]
     #[test]
     fn test_build_gitignore_merges_nested_gitignores() {
         let dir = TempDir::new().unwrap();

@@ -6,6 +6,10 @@ use super::pipeline::{
     test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MessageKind::User,
 };
 
+#[cfg_attr(
+    feature = "pinch-hardened",
+    ignore = "project instruction files are not loaded"
+)]
 #[tokio::test]
 async fn prompt_and_skill_lifecycle() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
