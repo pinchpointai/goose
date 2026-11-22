@@ -60,6 +60,9 @@ pub trait ToolGate: Send + Sync {
 
     /// Text the owner typed into a session (not model, recipe, or tool output).
     fn owner_message(&self, session_id: &str, text: &str);
+
+    /// A subagent session was started (or resumed) by `parent_session_id`.
+    fn session_spawned(&self, _parent_session_id: &str, _child_session_id: &str) {}
 }
 
 static GATE: OnceLock<Arc<dyn ToolGate>> = OnceLock::new();
@@ -96,6 +99,12 @@ pub fn owner_message(session_id: &str, text: &str) {
     }
 }
 
+pub fn session_spawned(parent_session_id: &str, child_session_id: &str) {
+    if let Some(gate) = GATE.get() {
+        gate.session_spawned(parent_session_id, child_session_id);
+    }
+}
+
 pub fn denied(reason: &str) -> ErrorData {
     ErrorData::new(
         ErrorCode::INVALID_REQUEST,
@@ -120,6 +129,7 @@ pub(crate) mod test_gate {
 
     pub(crate) static SEEN: Mutex<Vec<(CallSite, String, String)>> = Mutex::new(Vec::new());
     pub(crate) static COMPLETED: Mutex<Vec<(String, Result<(), String>)>> = Mutex::new(Vec::new());
+    pub(crate) static SPAWNED: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
     struct TestGate;
 
@@ -147,6 +157,13 @@ pub(crate) mod test_gate {
         }
 
         fn owner_message(&self, _session_id: &str, _text: &str) {}
+
+        fn session_spawned(&self, parent: &str, child: &str) {
+            SPAWNED
+                .lock()
+                .unwrap()
+                .push((parent.to_string(), child.to_string()));
+        }
     }
 
     #[ctor::ctor]

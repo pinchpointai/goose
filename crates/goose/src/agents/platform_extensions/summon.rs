@@ -444,6 +444,7 @@ impl SummonClient {
                 .apply()
                 .await
                 .map_err(|e| format!("Failed to link subagent to parent session: {}", e))?;
+            crate::tool_gate::session_spawned(parent_session_id, &session.id);
         }
 
         Ok(session)
@@ -902,6 +903,7 @@ impl SummonClient {
                 "Subagent {subagent_id} does not belong to this session"
             ));
         }
+        crate::tool_gate::session_spawned(parent_id, subagent_id);
         let completed = subagent
             .conversation
             .as_ref()
@@ -1820,6 +1822,25 @@ mod tests {
                 ),
             )
             .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn subagent_sessions_are_reported_to_the_tool_gate() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let manager = Arc::new(crate::session::SessionManager::new(
+            temp_dir.path().to_path_buf(),
+        ));
+        let parent = create_session(&manager, &temp_dir, SessionType::User, None).await?;
+        let client = SummonClient::new(create_test_context_with_session_manager(manager.clone()))?;
+        let child = client
+            .create_subagent_session(temp_dir.path(), &parent.id, "child".to_string())
+            .await
+            .map_err(anyhow::Error::msg)?;
+        assert!(crate::tool_gate::test_gate::SPAWNED
+            .lock()
+            .unwrap()
+            .contains(&(parent.id.clone(), child.id.clone())));
         Ok(())
     }
 
