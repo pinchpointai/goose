@@ -827,7 +827,18 @@ impl ExtensionManager {
                     session_id: Some(session_id.to_string()),
                     extension: config.key(),
                     tool: "extension_spawn".to_string(),
-                    arguments: serde_json::json!({ "command": cmd, "args": args }),
+                    arguments: {
+                        let mut env_keys: Vec<&String> = envs.keys().collect();
+                        env_keys.sort();
+                        serde_json::json!({
+                            "command": cmd,
+                            "args": args,
+                            "resolved": stdio::resolve_command(cmd),
+                            "env_keys": env_keys,
+                            "cwd": client_working_dir,
+                            "container": container.map(|c| c.id().to_string()),
+                        })
+                    },
                     working_dir: Some(client_working_dir.clone()),
                 };
                 let pass = crate::tool_gate::authorize(&gate_call, &CancellationToken::new())

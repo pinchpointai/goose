@@ -253,10 +253,15 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     let home = dirs::home_dir();
     let config = Paths::config_dir();
 
-    let local_recipe_dirs: Vec<PathBuf> = vec![
-        working_dir.join(".goose/recipes"),
-        working_dir.join(".agents/recipes"),
-    ];
+    // Project recipes and agents are untrusted input in Pinch builds.
+    let local_recipe_dirs: Vec<PathBuf> = if crate::tool_gate::HARDENED {
+        Vec::new()
+    } else {
+        vec![
+            working_dir.join(".goose/recipes"),
+            working_dir.join(".agents/recipes"),
+        ]
+    };
 
     let global_recipe_dirs: Vec<PathBuf> = std::env::var("GOOSE_RECIPE_PATH")
         .ok()
@@ -276,11 +281,15 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
         )
         .collect();
 
-    let local_agent_dirs: Vec<PathBuf> = vec![
-        working_dir.join(".goose/agents"),
-        working_dir.join(".claude/agents"),
-        working_dir.join(".agents/agents"),
-    ];
+    let local_agent_dirs: Vec<PathBuf> = if crate::tool_gate::HARDENED {
+        Vec::new()
+    } else {
+        vec![
+            working_dir.join(".goose/agents"),
+            working_dir.join(".claude/agents"),
+            working_dir.join(".agents/agents"),
+        ]
+    };
 
     let global_agent_dirs: Vec<PathBuf> = [
         home.as_ref().map(|h| h.join(".goose/agents")),
@@ -292,13 +301,15 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     .flatten()
     .collect();
 
-    scan_recipes_from_dir(
-        working_dir,
-        SourceType::Recipe,
-        true,
-        &mut sources,
-        &mut seen,
-    );
+    if !crate::tool_gate::HARDENED {
+        scan_recipes_from_dir(
+            working_dir,
+            SourceType::Recipe,
+            true,
+            &mut sources,
+            &mut seen,
+        );
+    }
 
     for dir in local_recipe_dirs {
         scan_recipes_from_dir(&dir, SourceType::Recipe, false, &mut sources, &mut seen);

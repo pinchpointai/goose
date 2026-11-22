@@ -325,7 +325,8 @@ fn all_skill_dirs_with_config(working_dir: Option<&Path>, config: &Config) -> Ve
     let mut dirs = Vec::new();
     let plugin_dirs = enabled_plugin_skill_dirs_with_config(working_dir, config);
 
-    if let Some(wd) = working_dir {
+    // Project skills are untrusted input in Pinch builds (see hints::load_hint_files).
+    if let Some(wd) = working_dir.filter(|_| !crate::tool_gate::HARDENED) {
         for path in [
             wd.join(".agents").join("skills"),
             wd.join(".goose").join("skills"),

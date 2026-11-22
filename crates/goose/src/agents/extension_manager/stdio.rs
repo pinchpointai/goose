@@ -52,7 +52,7 @@ pub(super) fn docker_exec(
     })
 }
 
-fn resolve_command(cmd: &str) -> std::path::PathBuf {
+pub(super) fn resolve_command(cmd: &str) -> std::path::PathBuf {
     SearchPaths::builder()
         .with_npm()
         .resolve(cmd)

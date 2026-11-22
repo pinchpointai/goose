@@ -90,3 +90,28 @@ fn project_instruction_files_are_not_loaded_when_hardened() {
         "{hints}"
     );
 }
+
+#[test]
+fn project_skills_recipes_and_agents_are_not_discovered_when_hardened() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    std::fs::create_dir_all(root.join(".goose/recipes")).unwrap();
+    std::fs::write(
+        root.join(".goose/recipes/pinch-test-recipe.yaml"),
+        "version: 1.0.0\ntitle: pinch-test-recipe\ndescription: PINCH-TEST recipe\ninstructions: do it\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join(".claude/agents")).unwrap();
+    std::fs::write(
+        root.join(".claude/agents/pinch-test-agent.md"),
+        "---\nname: pinch-test-agent\ndescription: PINCH-TEST agent\n---\nbody\n",
+    )
+    .unwrap();
+    let names: Vec<String> =
+        goose::agents::platform_extensions::summon::discover_filesystem_sources(root)
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+    let found = names.iter().any(|n| n.starts_with("pinch-test"));
+    assert_eq!(!found, tool_gate::HARDENED, "{names:?}");
+}
