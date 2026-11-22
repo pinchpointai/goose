@@ -563,6 +563,10 @@ mod tests {
         assert_eq!(rendered, skill.content);
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project and user plugins are disabled"
+    )]
     #[test]
     fn project_plugin_skill_precedes_global_skill_with_same_name() {
         let project = tempfile::tempdir().unwrap();
@@ -605,6 +609,10 @@ mod tests {
         assert!(Path::new(&skill.path).starts_with(&plugin_root));
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project and user plugins are disabled"
+    )]
     #[test]
     fn user_plugin_skill_remains_writable_when_project_root_is_path_root() {
         let path_root = tempfile::tempdir().unwrap();
@@ -639,6 +647,10 @@ mod tests {
         assert!(skill.writable);
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project and user plugins are disabled"
+    )]
     #[test]
     fn exclusive_project_plugin_manifest_omits_default_skill_root() {
         let project = tempfile::tempdir().unwrap();
@@ -784,6 +796,10 @@ mod tests {
         assert!(skill_dir.join("SKILL.md").is_file());
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project and user plugins are disabled"
+    )]
     #[test]
     fn nested_project_plugin_skill_is_listed_read_only_and_rejected_by_source_crud() {
         let project = tempfile::tempdir().unwrap();
@@ -820,6 +836,10 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project and user plugins are disabled"
+    )]
     #[test]
     fn symlinked_project_plugin_skill_is_rejected_by_source_crud() {
         let project = tempfile::tempdir().unwrap();
@@ -861,6 +881,10 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "project and user plugins are disabled"
+    )]
     #[test]
     fn symlinked_user_plugin_skill_remains_writable_for_source_crud() {
         let path_root = tempfile::tempdir().unwrap();

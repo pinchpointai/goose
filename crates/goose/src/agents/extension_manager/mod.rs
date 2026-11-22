@@ -339,6 +339,7 @@ impl Extension {
                 }
                 tool.name = format!("{}__{}", self.key, tool.name).into();
                 let mut meta = tool.meta.as_ref().map(|m| m.0.clone()).unwrap_or_default();
+                crate::tool_gate::strip_reserved_meta(&mut meta);
                 meta.insert(
                     TOOL_EXTENSION_META_KEY.to_string(),
                     Value::String(self.key.clone()),
@@ -821,6 +822,20 @@ impl ExtensionManager {
             }) => {
                 let mut envs = envs.get_env();
                 envs.insert("AGENT_SESSION_ID".to_string(), session_id.to_string());
+                let gate_call = crate::tool_gate::GateCall {
+                    site: crate::tool_gate::CallSite::ExtensionSpawn,
+                    session_id: Some(session_id.to_string()),
+                    extension: config.key(),
+                    tool: "extension_spawn".to_string(),
+                    arguments: serde_json::json!({ "command": cmd, "args": args }),
+                    working_dir: Some(client_working_dir.clone()),
+                };
+                let pass = crate::tool_gate::authorize(&gate_call, &CancellationToken::new())
+                    .await
+                    .map_err(|reason| {
+                        ExtensionError::SetupError(format!("Blocked by the Pinch gate: {reason}"))
+                    })?;
+                crate::tool_gate::completed(pass, Ok(()));
                 Box::new(
                     stdio::connect(
                         cmd,

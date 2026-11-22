@@ -10,6 +10,7 @@ description.workspace = true
 
 [features]
 default = []
+pinch-hardened = []
 online-model-meta = []
 telemetry = []
 otel = [

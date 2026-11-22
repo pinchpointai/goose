@@ -127,6 +127,9 @@ pub(crate) fn enabled_plugin_skill_dirs_with_config(
     project_root: Option<&Path>,
     config: &Config,
 ) -> Vec<(PathBuf, PluginScope)> {
+    if crate::tool_gate::HARDENED {
+        return Vec::new();
+    }
     let plugins_dir = plugin_install_dir();
     for update in auto_update_plugins_at_root(Utc::now(), &plugins_dir) {
         if let Err(err) = update.result {

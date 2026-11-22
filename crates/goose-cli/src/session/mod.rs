@@ -811,6 +811,7 @@ impl CliSession {
         editor: &mut rustyline::Editor<GooseCompleter, rustyline::history::DefaultHistory>,
     ) -> Result<()> {
         history.save(editor);
+        goose::tool_gate::owner_message(&self.session_id, content);
         self.push_message(Message::user().with_text(content));
 
         let _provider = self.services.provider(&self.session_id).await?;

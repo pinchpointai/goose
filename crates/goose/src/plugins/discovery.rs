@@ -50,6 +50,9 @@ enum SettingsScope {
 /// `project_root`, when supplied, enables project + local scope settings and
 /// project-scope `.agents/plugins/` lookups.
 pub fn discover_enabled_plugins(project_root: Option<&Path>) -> Vec<DiscoveredPlugin> {
+    if crate::tool_gate::HARDENED {
+        return Vec::new();
+    }
     discover_enabled_plugins_with_config(project_root, Config::global())
 }
 

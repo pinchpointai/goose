@@ -3,6 +3,7 @@ use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::subprocess::SubprocessExt;
@@ -48,6 +49,26 @@ pub(crate) async fn execute_shell_command(
         timeout, command
     );
 
+    let gate_call = crate::tool_gate::GateCall {
+        site: crate::tool_gate::CallSite::RecipeShell,
+        session_id: crate::session_context::current_session_id(),
+        extension: "recipe".to_string(),
+        tool: "shell".to_string(),
+        arguments: serde_json::json!({ "command": command }),
+        working_dir: std::env::current_dir().ok(),
+    };
+    let pass = crate::tool_gate::authorize(&gate_call, &CancellationToken::new())
+        .await
+        .map_err(|reason| anyhow::anyhow!("Blocked by the Pinch gate: {reason}"))?;
+    let output = execute_ungated_shell_command(command, timeout).await;
+    crate::tool_gate::completed(pass, output.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+    output
+}
+
+async fn execute_ungated_shell_command(
+    command: &str,
+    timeout: std::time::Duration,
+) -> Result<std::process::Output> {
     let future = async {
         let mut cmd = if cfg!(target_os = "windows") {
             let mut cmd = Command::new("cmd");
@@ -176,6 +197,35 @@ pub async fn execute_on_failure_command_with_timeout(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn recipe_shell_commands_go_through_the_gate() {
+        let dir = tempfile::tempdir().unwrap();
+        let denied = dir.path().join("pinch_deny_marker");
+        let result = execute_shell_command(
+            &format!("touch '{}'", denied.display()),
+            Duration::from_secs(10),
+        )
+        .await;
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Blocked by the Pinch gate"));
+        assert!(!denied.exists());
+        assert!(crate::tool_gate::test_gate::saw(
+            crate::tool_gate::CallSite::RecipeShell,
+            "shell"
+        ));
+
+        let allowed = dir.path().join("pinch_allow_marker");
+        execute_shell_command(
+            &format!("touch '{}'", allowed.display()),
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
+        assert!(allowed.exists());
+    }
 
     #[tokio::test]
     async fn test_execute_shell_command_success() {

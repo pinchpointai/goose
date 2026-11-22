@@ -53,6 +53,7 @@ pub mod sources;
 pub use goose_agent::subprocess;
 pub mod token_counter;
 mod tool_call_labels;
+pub mod tool_gate;
 pub mod tool_inspection;
 pub mod tool_monitor;
 pub mod tracing;

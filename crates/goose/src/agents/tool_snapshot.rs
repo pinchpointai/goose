@@ -520,10 +520,21 @@ impl PlatformTools {
         .with_services(services)
         .with_notification_emitter(emitter);
         let server_name = item.server_name.clone();
+        let gate_call = crate::tool_gate::GateCall {
+            site: crate::tool_gate::CallSite::PlatformTool,
+            session_id: Some(self.session_id.clone()),
+            extension: self.entries[item.entry].key.clone(),
+            tool: server_name.clone(),
+            arguments: serde_json::Value::Object(tool_call.arguments.clone().unwrap_or_default()),
+            working_dir: self.working_dir.clone(),
+        };
         ToolCallResult {
             result: Box::new(
                 async move {
-                    client
+                    let pass = crate::tool_gate::authorize(&gate_call, &cancellation_token)
+                        .await
+                        .map_err(|reason| crate::tool_gate::denied(&reason))?;
+                    let outcome = client
                         .call_tool(
                             &context,
                             &server_name,
@@ -536,7 +547,15 @@ impl PlatformTools {
                             error => {
                                 ErrorData::new(ErrorCode::INTERNAL_ERROR, error.to_string(), None)
                             }
-                        })
+                        });
+                    crate::tool_gate::completed(
+                        pass,
+                        outcome
+                            .as_ref()
+                            .map(|_| ())
+                            .map_err(|e| e.message.to_string()),
+                    );
+                    outcome
                 }
                 .boxed(),
             ),

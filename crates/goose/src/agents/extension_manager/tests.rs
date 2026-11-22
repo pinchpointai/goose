@@ -2,7 +2,7 @@ use super::*;
 use crate::agents::mcp_client::McpCallContext as ToolCallContext;
 use crate::agents::GoosePlatform;
 use crate::agents::StateMachineServices;
-use rmcp::model::{CallToolResult, ErrorCode};
+use rmcp::model::{CallToolResult, ErrorCode, ErrorData};
 use rmcp::model::{CustomNotification, InitializeResult, JsonObject};
 use rmcp::{object, ServiceError as Error};
 
@@ -1019,6 +1019,10 @@ async fn selection_changes_show_up_in_the_next_lease_only() {
         .any(|tool| tool.name == "fixture__app_card"));
 }
 
+#[cfg_attr(
+    feature = "pinch-hardened",
+    ignore = "external-agent providers are compiled out"
+)]
 #[tokio::test]
 async fn a_provider_running_its_own_tool_loop_keeps_mcp_servers_out_of_the_lease() {
     let temp_dir = tempfile::tempdir().unwrap();
@@ -1606,4 +1610,226 @@ fn test_recover_mangled_tool_name_non_extension_manager_tools() {
         recover_mangled_tool_name("platform.manage_schedule", tools.iter().copied()).as_deref(),
         Some("platform__manage_schedule")
     );
+}
+
+struct GateProbeClient {
+    ran: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[async_trait::async_trait]
+impl McpClientTrait for GateProbeClient {
+    async fn list_tools(
+        &self,
+        _session_id: &str,
+        _next_cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ListToolsResult, Error> {
+        let mut tool = Tool::new(
+            "probe".to_string(),
+            "test tool".to_string(),
+            Arc::new(serde_json::Map::new()),
+        );
+        tool.meta = Some(MetaObject(
+            object!({ "goose.executable": true, "goose.external_dispatch": true }),
+        ));
+        Ok(ListToolsResult {
+            tools: vec![tool],
+            ..Default::default()
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        _ctx: &ToolCallContext,
+        _name: &str,
+        _arguments: Option<JsonObject>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<CallToolResult, Error> {
+        self.ran.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(CallToolResult::success(vec![]))
+    }
+
+    fn get_info(&self) -> Option<&InitializeResult> {
+        None
+    }
+}
+
+async fn call_gated_mcp_probe(extension: &str) -> (bool, Result<CallToolResult, ErrorData>) {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let services = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
+    let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    services
+        .extension_manager
+        .add_mock_extension(
+            extension.to_string(),
+            Arc::new(GateProbeClient { ran: ran.clone() }),
+        )
+        .await;
+    let dispatched = services
+        .scope_tools("session")
+        .await
+        .call(
+            CallToolRequestParams::new(format!("{extension}__probe")).with_arguments(object!({})),
+            CallRequest::from(&ToolCallContext::new("session".to_string(), None, None)),
+            CancellationToken::default(),
+            &services,
+        )
+        .await
+        .expect("tool call should dispatch");
+    let result = dispatched.result.await;
+    (ran.load(std::sync::atomic::Ordering::SeqCst), result)
+}
+
+#[tokio::test]
+async fn gate_denial_stops_mcp_tool_before_the_server_runs() {
+    let (ran, result) = call_gated_mcp_probe("pinch-deny-mcp").await;
+    assert!(!ran);
+    let err = result.unwrap_err();
+    assert!(err.message.contains("Blocked by the Pinch gate"));
+    assert!(crate::tool_gate::test_gate::saw(
+        crate::tool_gate::CallSite::McpTool,
+        "pinch-deny-mcp"
+    ));
+}
+
+#[tokio::test]
+async fn gate_allowed_mcp_tool_runs_and_reports_completion() {
+    let (ran, result) = call_gated_mcp_probe("pinch-allow-mcp").await;
+    assert!(ran);
+    assert!(result.is_ok());
+    assert!(crate::tool_gate::test_gate::completed_ok("pinch-allow-mcp"));
+}
+
+#[tokio::test]
+async fn listed_tools_cannot_preapprove_themselves() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let services = StateMachineServices::for_tool_tests(temp_dir.path().to_path_buf());
+    services
+        .extension_manager
+        .add_mock_extension(
+            "pinch-meta".to_string(),
+            Arc::new(GateProbeClient {
+                ran: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            }),
+        )
+        .await;
+    let tools = services.scope_tools("session").await.tools().await;
+    let probe = tools
+        .iter()
+        .find(|t| t.name == "pinch-meta__probe")
+        .expect("probe tool listed");
+    let meta = &probe.meta.as_ref().unwrap().0;
+    assert!(
+        meta.keys().all(|k| !k.starts_with("goose.")),
+        "reserved keys leaked: {meta:?}"
+    );
+}
+
+async fn call_gated_platform_probe(tool: &str) -> (bool, Result<CallToolResult, ErrorData>) {
+    use crate::agents::platform_extensions::PlatformExtension;
+    struct PlatformProbe(Arc<std::sync::atomic::AtomicBool>, String);
+    #[async_trait::async_trait]
+    impl PlatformExtension for PlatformProbe {
+        async fn list_tools(&self, _scope: &str) -> Result<Vec<Tool>, Error> {
+            Ok(vec![Tool::new(
+                self.1.clone(),
+                "test tool".to_string(),
+                Arc::new(serde_json::Map::new()),
+            )])
+        }
+        async fn call_tool(
+            &self,
+            _context: &crate::agents::tool_execution::ToolCallContext,
+            _name: &str,
+            _args: Option<JsonObject>,
+            _cancel: CancellationToken,
+        ) -> Result<CallToolResult, Error> {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(CallToolResult::success(vec![]))
+        }
+        fn get_info(&self) -> Option<&InitializeResult> {
+            None
+        }
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let services = StateMachineServices::for_tool_tests(temp.path().to_path_buf());
+    let ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let lease = services.scope_tools("session").await.with_platform_client(
+        builtin_config("todo", vec![]),
+        Arc::new(PlatformProbe(ran.clone(), tool.to_string())),
+    );
+    let tools = lease.tools().await;
+    let name = tools
+        .iter()
+        .find(|t| t.name.ends_with(tool))
+        .expect("probe listed")
+        .name
+        .to_string();
+    let result = lease
+        .call(
+            CallToolRequestParams::new(name),
+            CallRequest::default(),
+            CancellationToken::new(),
+            &services,
+        )
+        .await
+        .unwrap()
+        .result
+        .await;
+    (ran.load(std::sync::atomic::Ordering::SeqCst), result)
+}
+
+#[tokio::test]
+async fn gate_denial_stops_platform_tool_before_it_runs() {
+    let (ran, result) = call_gated_platform_probe("pinch_deny_probe").await;
+    assert!(!ran);
+    assert!(result
+        .unwrap_err()
+        .message
+        .contains("Blocked by the Pinch gate"));
+    assert!(crate::tool_gate::test_gate::saw(
+        crate::tool_gate::CallSite::PlatformTool,
+        "pinch_deny_probe"
+    ));
+}
+
+#[tokio::test]
+async fn gate_allowed_platform_tool_runs_and_reports_completion() {
+    let (ran, result) = call_gated_platform_probe("pinch_allow_probe").await;
+    assert!(ran);
+    assert!(result.is_ok());
+    assert!(crate::tool_gate::test_gate::completed_ok(
+        "pinch_allow_probe"
+    ));
+}
+
+#[tokio::test]
+async fn gate_denial_stops_an_extension_process_from_starting() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("pinch_deny_spawned");
+    let services = StateMachineServices::for_tool_tests(dir.path().to_path_buf());
+    let config = ExtensionConfig::External(
+        goose_agent::extension::ExtensionConfig::stdio(
+            "spawnprobe",
+            "/usr/bin/touch",
+            "probe",
+            5u64,
+        )
+        .with_args([marker.display().to_string()]),
+    );
+    let client = services.extension_manager.client("session");
+    let err = match services
+        .extension_manager
+        .start(&config, None, "session", &client)
+        .await
+    {
+        Err(e) => e,
+        Ok(_) => panic!("denied extension should not start"),
+    };
+    assert!(err.to_string().contains("Blocked by the Pinch gate"));
+    assert!(!marker.exists());
+    assert!(crate::tool_gate::test_gate::saw(
+        crate::tool_gate::CallSite::ExtensionSpawn,
+        "extension_spawn"
+    ));
 }

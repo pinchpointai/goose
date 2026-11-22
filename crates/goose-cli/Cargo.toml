@@ -91,6 +91,7 @@ winapi = { workspace = true, features = [
 libc = { version = "0.2.182", default-features = false, features = ["std"] }
 
 [features]
+pinch-hardened = ["goose/pinch-hardened"]
 default = [
     "code-mode",
     "tree-sitter",

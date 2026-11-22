@@ -2243,6 +2243,12 @@ async fn handle_run_command(
     })
     .await;
 
+    if recipe.is_none() {
+        if let Some(contents) = &input_config.contents {
+            goose::tool_gate::owner_message(session.session_id(), contents);
+        }
+    }
+
     if run_behavior.interactive {
         session.interactive(input_config.contents).await
     } else if let Some(contents) = input_config.contents {

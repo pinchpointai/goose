@@ -566,28 +566,36 @@ impl McpLease {
         let mcp_app_call = McpAppCall::from_resolved(&resolved, self.hydrate_mcp_apps);
         let server_name = resolved.server_name.to_string();
         let session_id = self.scope_id.clone();
+        let gate_call = crate::tool_gate::GateCall {
+            site: crate::tool_gate::CallSite::McpTool,
+            session_id: Some(session_id.clone()),
+            extension: resolved.extension.key.clone(),
+            tool: server_name.clone(),
+            arguments: serde_json::Value::Object(arguments.clone().unwrap_or_default()),
+            working_dir: self.working_dir.clone(),
+        };
         let result = async move {
-            let mut result = client
-                .call_tool(
-                    &call_context,
-                    &server_name,
-                    arguments,
-                    cancellation_token.clone(),
-                )
+            let pass = crate::tool_gate::authorize(&gate_call, &cancellation_token)
                 .await
-                .map_err(|e| match e {
-                    ServiceError::McpError(error_data) => error_data,
-                    _ => ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None),
-                })?;
-            remove_untrusted_mcp_app_meta(&mut result);
-            ExtensionMutation::take(&mut result);
-            remove_subagent_session_meta(&mut result);
-            if let Some(mcp_app_call) = mcp_app_call {
-                mcp_app_call
-                    .attach_resource(&*client, &session_id, &mut result, cancellation_token)
-                    .await;
-            }
-            Ok(result)
+                .map_err(|reason| crate::tool_gate::denied(&reason))?;
+            let outcome = Self::call_server(
+                client,
+                call_context,
+                server_name,
+                arguments,
+                cancellation_token,
+                mcp_app_call,
+                session_id,
+            )
+            .await;
+            crate::tool_gate::completed(
+                pass,
+                outcome
+                    .as_ref()
+                    .map(|_| ())
+                    .map_err(|e| e.message.to_string()),
+            );
+            outcome
         };
 
         ToolCallResult {
@@ -595,6 +603,38 @@ impl McpLease {
             notification_stream: Some(notification_stream),
             action_required_stream,
         }
+    }
+
+    async fn call_server(
+        client: super::McpClientBox,
+        call_context: McpCallContext,
+        server_name: String,
+        arguments: Option<rmcp::model::JsonObject>,
+        cancellation_token: CancellationToken,
+        mcp_app_call: Option<McpAppCall>,
+        session_id: String,
+    ) -> Result<CallToolResult, ErrorData> {
+        let mut result = client
+            .call_tool(
+                &call_context,
+                &server_name,
+                arguments,
+                cancellation_token.clone(),
+            )
+            .await
+            .map_err(|e| match e {
+                ServiceError::McpError(error_data) => error_data,
+                _ => ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None),
+            })?;
+        remove_untrusted_mcp_app_meta(&mut result);
+        ExtensionMutation::take(&mut result);
+        remove_subagent_session_meta(&mut result);
+        if let Some(mcp_app_call) = mcp_app_call {
+            mcp_app_call
+                .attach_resource(&*client, &session_id, &mut result, cancellation_token)
+                .await;
+        }
+        Ok(result)
     }
 
     async fn action_required_stream(

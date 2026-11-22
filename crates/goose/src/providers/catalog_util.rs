@@ -86,6 +86,10 @@ mod tests {
         assert_eq!(groq.metadata().display_name, "Groq");
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "external-agent providers are compiled out"
+    )]
     #[tokio::test]
     async fn setup_catalog_includes_goose_and_curated_fields() {
         let entries = get_setup_catalog_entries().await;
@@ -174,6 +178,10 @@ mod tests {
         );
     }
 
+    #[cfg_attr(
+        feature = "pinch-hardened",
+        ignore = "external-agent providers are compiled out"
+    )]
     #[tokio::test]
     async fn setup_catalog_preserves_curated_providers_and_hides_deprecated_ones() {
         let provider_ids = get_setup_catalog_entries()

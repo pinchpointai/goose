@@ -6,6 +6,7 @@ use super::bedrock::BedrockProvider;
 use super::local_inference::LocalInferenceProvider;
 #[cfg(feature = "aws-providers")]
 use super::sagemaker_tgi::SageMakerTgiProvider;
+#[cfg_attr(feature = "pinch-hardened", allow(unused_imports))]
 use super::{
     amp_acp::AmpAcpProvider,
     avian::AvianProvider,
@@ -61,6 +62,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
     let mut registry = ProviderRegistry::new(tls_config).with_providers(|registry| {
         use super::inventory::registrations;
 
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register_with_inventory::<AmpAcpProvider>(
             false,
             Some(registrations::amp_acp_inventory()),
@@ -83,20 +85,26 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             true,
             Some(registrations::chatgpt_codex_inventory()),
         );
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register_with_inventory::<ClaudeAcpProvider>(
             false,
             Some(registrations::claude_acp_inventory()),
         );
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register::<ClaudeCodeProvider>(true);
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register_with_inventory::<CodexAcpProvider>(
             false,
             Some(registrations::codex_acp_inventory()),
         );
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register_with_inventory::<CopilotAcpProvider>(
             false,
             Some(registrations::copilot_acp_inventory()),
         );
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register::<CodexProvider>(true);
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register_with_inventory::<CursorAgentProvider>(
             false,
             Some(registrations::refresh_only()),
@@ -113,6 +121,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             false,
             Some(registrations::refresh_only()),
         );
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register::<GeminiCliProvider>(false);
         registry.register_with_inventory::<GeminiOAuthProvider>(
             false,
@@ -170,6 +179,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
                     .is_ok()
             })),
         );
+        #[cfg(not(feature = "pinch-hardened"))]
         registry.register_with_inventory::<PiAcpProvider>(
             false,
             Some(registrations::pi_acp_inventory()),
